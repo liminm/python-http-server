@@ -4,6 +4,7 @@ import socket
 import threading
 import traceback # For more detailed error printing
 import argparse
+import gzip
 
 def parse_request(request_bytes):
     """
@@ -40,6 +41,8 @@ def parse_request(request_bytes):
                 headers[key.strip().lower()] = value.strip() # Lowercase keys for consistency
 
 
+
+
         # Body parsing could be added here if needed (e.g., for POST)
         content_length = int(headers.get("content-length", 0)) # Default to 0 if not present
 
@@ -48,6 +51,8 @@ def parse_request(request_bytes):
             body = request_str[body_start:body_start + content_length]
         else:
             body = None
+
+
 
         print(f"Parsed Request: {method} {path} Headers: {headers} Body: {body}")
 
@@ -107,14 +112,26 @@ def route_request(parsed_request):
             file_path = pathlib.Path(os.curdir, path[len("/files/"):])
             print(f"Path: {path}")
             print(f"File path requested: {file_path}")
+
+
+
+
             try:
                 with open(file_path, 'rb') as f:
                     file_content = f.read()
+
+                    accept_encoding = headers.get("Accept-Encoding", "")
+                    if "gzip" in accept_encoding:
+                        # Handle gzip encoding if needed
+                        file_content = gzip.compress(file_content)
+
+
                 return (f"HTTP/1.1 200 OK\r\n"
                         f"Content-Type: application/octet-stream\r\n"
                         f"Content-Length: {len(file_content)}\r\n"
                         f"\r\n" # End of headers
-                        f"{file_content.decode('utf-8', errors='replace')}")
+                        # f"{file_content.decode('utf-8', errors='replace')}")
+                        f"{file_content}") # Send raw bytes
             except FileNotFoundError:
                 return "HTTP/1.1 404 Not Found\r\n\r\n"
 
@@ -127,8 +144,6 @@ def route_request(parsed_request):
 
             file_name = path[len("/files/"):] # Get the part after /files/
             content_bytes = parsed_request.get("body", "b") # Assuming body is part of the request
-            # Decode, replacing invalid bytes with the Unicode replacement character
-            # content_str = content_bytes.decode("utf-8", errors="replace")
 
             with open(f"{file_name}", "a") as f:
                 f.write(content_bytes)
