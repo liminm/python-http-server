@@ -111,6 +111,21 @@ def route_request(parsed_request):
             # Path not found for GET method
             return "HTTP/1.1 404 Not Found\r\n\r\n"
 
+    elif method == "POST":
+        if path.startswith("/files/"):
+
+            file_name = path[len("/files/"):] # Get the part after /files/
+            content_bytes = parsed_request.get("body", b"") # Assuming body is part of the request
+            # Decode, replacing invalid bytes with the Unicode replacement character
+            # content_str = content_bytes.decode("utf-8", errors="replace")
+
+            with open(f"{file_name}", "a") as f:
+                f.write(content_bytes)
+
+            return "HTTP/1.1 201 Created\r\n\r\n"
+
+        return "HTTP/1.1 405 Method Not Allowed\r\n\r\n" # For unsupported POST paths
+
     else:
         # Handle other methods if needed, otherwise return 404 or 405 Method Not Allowed
         return "HTTP/1.1 404 Not Found\r\n\r\n" # Or potentially 405
