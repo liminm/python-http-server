@@ -32,19 +32,25 @@ def parse_request(request_bytes):
 
         # Parse Headers
         headers = {}
-        for line in lines[1:]:
+        for line in lines[1:, -1]:
             if line == "": # Empty line signifies end of headers
                 break
             if ':' in line:
                 key, value = line.split(':', 1)
                 headers[key.strip().lower()] = value.strip() # Lowercase keys for consistency
 
+
         # Body parsing could be added here if needed (e.g., for POST)
+        if ':' not in lines[-1]:
+            body = lines[-1]
+        else:
+            body = None
 
         return {
             "method": method,
             "path": path,
             "headers": headers,
+            "body": body, # Assuming body is part of the request
             # "version": version # Optional
         }
     except Exception as e:
