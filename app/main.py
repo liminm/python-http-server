@@ -31,6 +31,10 @@ def main():
                     response = f"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {len(echo_content)}\r\n\r\n{echo_content}"
                     print(f"{response=}")
 
+                elif reqPath.startswith("/user-agent"):
+                    user_agent = req2.split("User-Agent: ")[1].split("\r\n")[0]
+                    response = f"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {len(user_agent)}\r\n\r\n{user_agent}"
+                    print(f"{response=}")
 
                 else:
                     response = "HTTP/1.1 404 Not Found\r\n\r\n"
