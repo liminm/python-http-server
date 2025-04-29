@@ -28,7 +28,7 @@ def main():
                 elif req2.startswith("GET /echo/"):
 
                     echo_content = reqPath.split("/")[-1]
-                    response = f"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 3\r\n\r\n{echo_content}"
+                    response = f"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {len(echo_content)}\r\n\r\n{echo_content}"
                     print(f"{response=}")
 
 
