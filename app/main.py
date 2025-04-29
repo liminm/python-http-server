@@ -1,10 +1,11 @@
+import argparse
+import gzip
 import os
 import pathlib
 import socket
 import threading
-import traceback # For more detailed error printing
-import argparse
-import gzip
+import traceback  # For more detailed error printing
+
 
 def parse_request(request_bytes):
     """
@@ -26,7 +27,7 @@ def parse_request(request_bytes):
         parts = request_line.split(' ')
         if len(parts) < 3:
             print(f"Warning: Malformed request line: {request_line}")
-            return None # Indicate parsing failure
+            return None  # Indicate parsing failure
         method = parts[0]
         path = parts[1]
         # version = parts[2] # Not strictly needed for current logic, but good to have
@@ -34,17 +35,14 @@ def parse_request(request_bytes):
         # Parse Headers
         headers = {}
         for line in lines[1:]:
-            if line == "": # Empty line signifies end of headers
+            if line == "":  # Empty line signifies end of headers
                 break
             if ':' in line:
                 key, value = line.split(':', 1)
-                headers[key.strip().lower()] = value.strip() # Lowercase keys for consistency
-
-
-
+                headers[key.strip().lower()] = value.strip()  # Lowercase keys for consistency
 
         # Body parsing could be added here if needed (e.g., for POST)
-        content_length = int(headers.get("content-length", 0)) # Default to 0 if not present
+        content_length = int(headers.get("content-length", 0))  # Default to 0 if not present
 
         if content_length > 0:
             body_start = request_str.find('\r\n\r\n') + 4
@@ -52,21 +50,20 @@ def parse_request(request_bytes):
         else:
             body = None
 
-
-
         print(f"Parsed Request: {method} {path} Headers: {headers} Body: {body}")
 
         return {
             "method": method,
             "path": path,
             "headers": headers,
-            "body": body, # Assuming body is part of the request
+            "body": body,  # Assuming body is part of the request
             # "version": version # Optional
         }
     except Exception as e:
         print(f"Error parsing request: {e}")
-        traceback.print_exc() # Print detailed traceback
+        traceback.print_exc()  # Print detailed traceback
         return None
+
 
 def route_request(parsed_request):
     """
@@ -80,7 +77,7 @@ def route_request(parsed_request):
     """
     if not parsed_request:
         # Handle cases where parsing failed
-        return "HTTP/1.1 400 Bad Request\r\n\r\n" # Suggest 400 for bad requests
+        return "HTTP/1.1 400 Bad Request\r\n\r\n"  # Suggest 400 for bad requests
 
     method = parsed_request["method"]
     path = parsed_request["path"]
@@ -92,19 +89,19 @@ def route_request(parsed_request):
             return "HTTP/1.1 200 OK\r\n\r\n"
 
         elif path.startswith("/echo/"):
-            echo_content = path[len("/echo/"):] # Get the part after /echo/
+            echo_content = path[len("/echo/"):]  # Get the part after /echo/
             return (f"HTTP/1.1 200 OK\r\n"
                     f"Content-Type: text/plain\r\n"
                     f"Content-Length: {len(echo_content)}\r\n"
-                    f"\r\n" # End of headers
+                    f"\r\n"  # End of headers
                     f"{echo_content}")
 
         elif path == "/user-agent":
-            user_agent = headers.get("user-agent", "Unknown") # Safely get header
+            user_agent = headers.get("user-agent", "Unknown")  # Safely get header
             return (f"HTTP/1.1 200 OK\r\n"
                     f"Content-Type: text/plain\r\n"
                     f"Content-Length: {len(user_agent)}\r\n"
-                    f"\r\n" # End of headers
+                    f"\r\n"  # End of headers
                     f"{user_agent}")
 
         elif path.startswith("/files/"):
@@ -112,9 +109,6 @@ def route_request(parsed_request):
             file_path = pathlib.Path(os.curdir, path[len("/files/"):])
             print(f"Path: {path}")
             print(f"File path requested: {file_path}")
-
-
-
 
             try:
                 with open(file_path, 'rb') as f:
@@ -124,14 +118,20 @@ def route_request(parsed_request):
                     if "gzip" in accept_encoding:
                         # Handle gzip encoding if needed
                         file_content = gzip.compress(file_content)
+                        content_encoding = "gzip"
 
+                        return (f"HTTP/1.1 200 OK\r\n"
+                                f"Content-Type: text/plain\r\n"
+                                f"Content-Encoding: {content_encoding}\r\n"
+                                f"Content-Length: {len(file_content)}\r\n"
+                                f"\r\n"  # End of headers
+                                f"{file_content}")
 
                 return (f"HTTP/1.1 200 OK\r\n"
                         f"Content-Type: application/octet-stream\r\n"
                         f"Content-Length: {len(file_content)}\r\n"
-                        f"\r\n" # End of headers
-                        # f"{file_content.decode('utf-8', errors='replace')}")
-                        f"{file_content}") # Send raw bytes
+                        f"\r\n"  # End of headers
+                        f"{file_content.decode('utf-8', errors='replace')}")
             except FileNotFoundError:
                 return "HTTP/1.1 404 Not Found\r\n\r\n"
 
@@ -141,20 +141,19 @@ def route_request(parsed_request):
 
     elif method == "POST":
         if path.startswith("/files/"):
-
-            file_name = path[len("/files/"):] # Get the part after /files/
-            content_bytes = parsed_request.get("body", "b") # Assuming body is part of the request
+            file_name = path[len("/files/"):]  # Get the part after /files/
+            content_bytes = parsed_request.get("body", "b")  # Assuming body is part of the request
 
             with open(f"{file_name}", "a") as f:
                 f.write(content_bytes)
 
             return "HTTP/1.1 201 Created\r\n\r\n"
 
-        return "HTTP/1.1 405 Method Not Allowed\r\n\r\n" # For unsupported POST paths
+        return "HTTP/1.1 405 Method Not Allowed\r\n\r\n"  # For unsupported POST paths
 
     else:
         # Handle other methods if needed, otherwise return 404 or 405 Method Not Allowed
-        return "HTTP/1.1 404 Not Found\r\n\r\n" # Or potentially 405
+        return "HTTP/1.1 404 Not Found\r\n\r\n"  # Or potentially 405
 
 
 def handle_connection(conn, addr):
@@ -172,7 +171,7 @@ def handle_connection(conn, addr):
         request_bytes = conn.recv(2048)
         if not request_bytes:
             print(f"Connection from {addr} closed before sending data.")
-            return # Exit if no data received
+            return  # Exit if no data received
 
         # 2. Parse Request
         parsed_request = parse_request(request_bytes)
@@ -182,20 +181,19 @@ def handle_connection(conn, addr):
         # else:
         #     print(f"Failed to parse request from {addr}")
 
-
         # 3. Route Request & Generate Response
         response_str = route_request(parsed_request)
 
         # 4. Send Response
-        conn.sendall(response_str.encode('utf-8')) # Use sendall for reliability
+        conn.sendall(response_str.encode('utf-8'))  # Use sendall for reliability
 
     except ConnectionResetError:
         print(f"Connection reset by peer: {addr}")
     except BrokenPipeError:
-         print(f"Broken pipe error with client: {addr}")
+        print(f"Broken pipe error with client: {addr}")
     except Exception as e:
         print(f"Error handling connection from {addr}: {e}")
-        traceback.print_exc() # Print full traceback for debugging
+        traceback.print_exc()  # Print full traceback for debugging
     finally:
         # 5. Close Connection
         try:
@@ -214,7 +212,7 @@ def main():
     url = "localhost"
     port = 4221
 
-    server_socket = None # Initialize to None
+    server_socket = None  # Initialize to None
     try:
         # Create the server socket
         server_socket = socket.create_server((url, port), reuse_port=True)
@@ -231,7 +229,7 @@ def main():
             client_thread = threading.Thread(
                 target=handle_connection,
                 args=(client_socket, client_address),
-                daemon=True # Set as daemon so threads exit when main program exits
+                daemon=True  # Set as daemon so threads exit when main program exits
             )
             client_thread.start()
 
@@ -246,6 +244,7 @@ def main():
             print("Closing server socket.")
             server_socket.close()
         print("Server shut down complete.")
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="An http server for learning")
