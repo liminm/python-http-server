@@ -91,7 +91,7 @@ def route_request(parsed_request):
         elif path.startswith("/echo/"):
             echo_content = path[len("/echo/"):]  # Get the part after /echo/
 
-            if headers.get("Accept-Encoding") == "gzip":
+            if "gzip" in headers.get("Accept-Encoding"):
                 # Handle gzip encoding if needed
                 echo_content = gzip.compress(echo_content.encode('utf-8'))
                 content_encoding = "gzip"
