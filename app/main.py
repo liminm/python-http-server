@@ -32,7 +32,7 @@ def parse_request(request_bytes):
 
         # Parse Headers
         headers = {}
-        for line in lines[1:, -1]:
+        for line in lines[1:]:
             if line == "": # Empty line signifies end of headers
                 break
             if ':' in line:
