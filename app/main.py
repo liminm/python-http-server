@@ -91,18 +91,17 @@ def route_request(parsed_request):
         elif path.startswith("/echo/"):
             echo_content = path[len("/echo/"):]  # Get the part after /echo/
 
-            accept_encoding = headers.get("Accept-Encoding")
-            if accept_encoding:
-                # Handle gzip encoding if needed
-                if "gzip" in accept_encoding:
-                    echo_content = gzip.compress(echo_content.encode('utf-8'))
-                    content_encoding = "gzip"
-                    return (f"HTTP/1.1 200 OK\r\n"
-                            f"Content-Type: text/plain\r\n"
-                            f"Content-Encoding: {content_encoding}\r\n"
-                            f"Content-Length: {len(echo_content)}\r\n"
-                            f"\r\n"  # End of headers
-                            f"{echo_content.decode('utf-8', errors='replace')}")
+            accept_encoding = headers.get("Accept-Encoding", "")
+            # Handle gzip encoding if needed
+            if "gzip" in accept_encoding:
+                echo_content = gzip.compress(echo_content.encode('utf-8'))
+                content_encoding = "gzip"
+                return (f"HTTP/1.1 200 OK\r\n"
+                        f"Content-Type: text/plain\r\n"
+                        f"Content-Encoding: {content_encoding}\r\n"
+                        f"Content-Length: {len(echo_content)}\r\n"
+                        f"\r\n"  # End of headers
+                        f"{echo_content.decode('utf-8', errors='replace')}")
 
             return (f"HTTP/1.1 200 OK\r\n"
                     f"Content-Type: text/plain\r\n"
