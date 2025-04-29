@@ -1,4 +1,5 @@
 import os
+import pathlib
 import socket
 import threading
 import traceback # For more detailed error printing
@@ -92,7 +93,7 @@ def route_request(parsed_request):
 
         elif path.startswith("/files/"):
             # Example: /files/somefile.txt
-            file_path = os.curdir + path[len("/files/"):]
+            file_path = pathlib.Path(os.curdir, path[len("/files/"):])
             print(f"Path: {path}")
             print(f"File path requested: {file_path}")
             try:
