@@ -41,8 +41,11 @@ def parse_request(request_bytes):
 
 
         # Body parsing could be added here if needed (e.g., for POST)
-        if ':' not in lines[-1]:
-            body = lines[-1]
+        content_length = int(headers.get("content-length", 0)) # Default to 0 if not present
+
+        if content_length > 0:
+            body_start = request_str.find('\r\n\r\n') + 4
+            body = request_str[body_start:body_start + content_length]
         else:
             body = None
 
