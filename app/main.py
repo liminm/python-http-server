@@ -115,11 +115,11 @@ def route_request(parsed_request):
         if path.startswith("/files/"):
 
             file_name = path[len("/files/"):] # Get the part after /files/
-            content_bytes = parsed_request.get("body", b"") # Assuming body is part of the request
+            content_bytes = parsed_request.get("body", "b") # Assuming body is part of the request
             # Decode, replacing invalid bytes with the Unicode replacement character
             # content_str = content_bytes.decode("utf-8", errors="replace")
 
-            with open(f"{file_name}", "a") as f:
+            with open(f"{file_name}", "ab") as f:
                 f.write(content_bytes)
 
             return "HTTP/1.1 201 Created\r\n\r\n"
