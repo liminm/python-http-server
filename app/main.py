@@ -91,7 +91,7 @@ def route_request(parsed_request):
         elif path.startswith("/files/"):
             # Example: /files/somefile.txt
             file_path = path[len("/files/"):]
-            file_path = "./tmp/" + file_path
+            # file_path = "./tmp/" + file_path
             print(f"Path: {path}")
             print(f"File path requested: {file_path}")
             try:
