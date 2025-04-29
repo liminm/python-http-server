@@ -130,7 +130,7 @@ def route_request(parsed_request):
             # Decode, replacing invalid bytes with the Unicode replacement character
             # content_str = content_bytes.decode("utf-8", errors="replace")
 
-            with open(f"{file_name}", "ab") as f:
+            with open(f"{file_name}", "a") as f:
                 f.write(content_bytes)
 
             return "HTTP/1.1 201 Created\r\n\r\n"
