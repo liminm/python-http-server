@@ -88,6 +88,20 @@ def route_request(parsed_request):
                     f"\r\n" # End of headers
                     f"{user_agent}")
 
+        elif path.startswith("/files/"):
+            # Example: /files/somefile.txt
+            file_path = path[len("/files/"):]
+            try:
+                with open(file_path, 'rb') as f:
+                    file_content = f.read()
+                return (f"HTTP/1.1 200 OK\r\n"
+                        f"Content-Type: application/octet-stream\r\n"
+                        f"Content-Length: {len(file_content)}\r\n"
+                        f"\r\n" # End of headers
+                        f"{file_content.decode('utf-8', errors='replace')}")
+            except FileNotFoundError:
+                return "HTTP/1.1 404 Not Found\r\n\r\n"
+
         else:
             # Path not found for GET method
             return "HTTP/1.1 404 Not Found\r\n\r\n"
