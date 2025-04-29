@@ -2,6 +2,7 @@ import os
 import socket
 import threading
 import traceback # For more detailed error printing
+import argparse
 
 def parse_request(request_bytes):
     """
@@ -204,6 +205,17 @@ def main():
             server_socket.close()
         print("Server shut down complete.")
 
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="An http server for learning")
+    parser.add_argument("--directory", help="Specify directory path", required=False)
+    return parser.parse_args()
+
 
 if __name__ == "__main__":
+    args = parse_arguments()
+    directory = args.directory
+    if directory:
+        print(f"Got directory: {directory}")
+        os.chdir(directory)
+
     main()
