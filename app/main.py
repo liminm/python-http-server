@@ -49,6 +49,8 @@ def parse_request(request_bytes):
         else:
             body = None
 
+        print(f"Parsed Request: {method} {path} Headers: {headers} Body: {body}")
+
         return {
             "method": method,
             "path": path,
