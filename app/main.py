@@ -1,5 +1,6 @@
 import argparse
 import gzip
+import io
 import os
 import pathlib
 import socket
@@ -10,40 +11,31 @@ import traceback  # For more detailed error printing
 def parse_request(request_bytes):
     """
     Parses the raw HTTP request bytes.
-
-    Args:
-        request_bytes: The raw bytes received from the client.
-
-    Returns:
-        A dictionary containing parsed request details (method, path, headers),
-        or None if parsing fails.
     """
     try:
         request_str = request_bytes.decode('utf-8', errors='replace')
         lines = request_str.split('\r\n')
 
-        # Parse Request Line (e.g., "GET /path HTTP/1.1")
+        # Extract request line and split into parts
         request_line = lines[0]
         parts = request_line.split(' ')
         if len(parts) < 3:
             print(f"Warning: Malformed request line: {request_line}")
-            return None  # Indicate parsing failure
+            return None
         method = parts[0]
         path = parts[1]
-        # version = parts[2] # Not strictly needed for current logic, but good to have
 
-        # Parse Headers
+        # Parse headers into a lowercase-key dict
         headers = {}
         for line in lines[1:]:
-            if line == "":  # Empty line signifies end of headers
+            if line == "":
                 break
             if ':' in line:
                 key, value = line.split(':', 1)
-                headers[key.strip().lower()] = value.strip()  # Lowercase keys for consistency
+                headers[key.strip().lower()] = value.strip()
 
-        # Body parsing could be added here if needed (e.g., for POST)
-        content_length = int(headers.get("content-length", 0))  # Default to 0 if not present
-
+        # Determine content length and extract body if present
+        content_length = int(headers.get("content-length", 0))
         if content_length > 0:
             body_start = request_str.find('\r\n\r\n') + 4
             body = request_str[body_start:body_start + content_length]
@@ -56,203 +48,193 @@ def parse_request(request_bytes):
             "method": method,
             "path": path,
             "headers": headers,
-            "body": body,  # Assuming body is part of the request
-            # "version": version # Optional
+            "body": body,
         }
     except Exception as e:
         print(f"Error parsing request: {e}")
-        traceback.print_exc()  # Print detailed traceback
+        traceback.print_exc()
         return None
 
 
 def route_request(parsed_request):
     """
-    Determines the appropriate HTTP response based on the parsed request.
+    Determines the HTTP response based on parsed request.
 
-    Args:
-        parsed_request: A dictionary containing parsed request details.
-
-    Returns:
-        A string containing the full HTTP response.
+    Returns (resp_headers_bytes, body_bytes, should_close_flag).
     """
+    # Return 400 Bad Request on parse failure
     if not parsed_request:
-        # Handle cases where parsing failed
-        return "HTTP/1.1 400 Bad Request\r\n\r\n"  # Suggest 400 for bad requests
+        resp = "HTTP/1.1 400 Bad Request\r\n\r\n".encode('utf-8')
+        return resp, b"", False
 
     method = parsed_request["method"]
     path = parsed_request["path"]
     headers = parsed_request["headers"]
 
-    # --- Routing Logic ---
-    if method == "GET":
-        if path == "/":
-            return "HTTP/1.1 200 OK\r\n\r\n"
+    # Check for Connection: close request header
+    connection_hdr = headers.get("connection", "").lower()
+    should_close = "close" in connection_hdr
 
-        elif path.startswith("/echo/"):
-            echo_content = path[len("/echo/"):]  # Get the part after /echo/
+    # Handle GET /
+    if method == "GET" and path == "/":
+        # Build response lines
+        resp_lines = [
+            "HTTP/1.1 200 OK",
+        ]
+        # Include Connection: close if requested
+        if should_close:
+            resp_lines.append("Connection: close")
+        resp_headers = ("\r\n".join(resp_lines) + "\r\n\r\n").encode('utf-8')
+        return resp_headers, b"", should_close
 
+    # Handle GET /echo/...
+    if method == "GET" and path.startswith("/echo/"):
+        echo_text = path[len("/echo/"):]
+        accept_encoding = headers.get("accept-encoding", "")
+
+        # Gzip compression if supported
+        if "gzip" in accept_encoding:
+            buf = io.BytesIO()
+            with gzip.GzipFile(fileobj=buf, mode='wb', mtime=0) as gz:
+                gz.write(echo_text.encode('utf-8'))
+            body = buf.getvalue()
+
+            resp_lines = [
+                "HTTP/1.1 200 OK",
+                "Content-Type: text/plain",
+                f"Content-Length: {len(body)}",
+            ]
+            if should_close:
+                resp_lines.append("Connection: close")
+            resp_headers = ("\r\n".join(resp_lines) + "\r\n\r\n").encode('utf-8')
+            return resp_headers, body, should_close
+
+        # Plain text echo
+        body = echo_text.encode('utf-8')
+        resp_lines = [
+            "HTTP/1.1 200 OK",
+            "Content-Type: text/plain",
+            f"Content-Length: {len(body)}",
+        ]
+        if should_close:
+            resp_lines.append("Connection: close")
+        resp_headers = ("\r\n".join(resp_lines) + "\r\n\r\n").encode('utf-8')
+        return resp_headers, body, should_close
+
+    # Handle GET /user-agent
+    if method == "GET" and path == "/user-agent":
+        ua = headers.get("user-agent", "Unknown")
+        body = ua.encode('utf-8')
+
+        resp_lines = [
+            "HTTP/1.1 200 OK",
+            "Content-Type: text/plain",
+            f"Content-Length: {len(body)}",
+        ]
+        if should_close:
+            resp_lines.append("Connection: close")
+        resp_headers = ("\r\n".join(resp_lines) + "\r\n\r\n").encode('utf-8')
+        return resp_headers, body, should_close
+
+    # Handle GET /files/...
+    if method == "GET" and path.startswith("/files/"):
+        file_path = pathlib.Path(os.curdir, path[len("/files/"):])
+        try:
+            with open(file_path, 'rb') as f:
+                data = f.read()
             accept_encoding = headers.get("accept-encoding", "")
-            # Handle gzip encoding if needed
             if "gzip" in accept_encoding:
-                echo_content = gzip.compress(echo_content.encode('utf-8'))
+                buf = io.BytesIO()
+                with gzip.GzipFile(fileobj=buf, mode='wb', mtime=0) as gz:
+                    gz.write(data)
+                data = buf.getvalue()
                 content_encoding = "gzip"
-                return (f"HTTP/1.1 200 OK\r\n"
-                        f"Content-Type: text/plain\r\n"
-                        f"Content-Encoding: {content_encoding}\r\n"
-                        f"Content-Length: {len(echo_content)}\r\n"
-                        f"\r\n"  # End of headers
-                        f"{echo_content.decode('utf-8', errors='replace')}")
+            else:
+                content_encoding = None
 
-            return (f"HTTP/1.1 200 OK\r\n"
-                    f"Content-Type: text/plain\r\n"
-                    f"Content-Length: {len(echo_content)}\r\n"
-                    f"\r\n"  # End of headers
-                    f"{echo_content}")
+            resp_lines = [
+                "HTTP/1.1 200 OK",
+                "Content-Type: application/octet-stream",
+                f"Content-Length: {len(data)}",
+            ]
+            if content_encoding:
+                resp_lines.insert(2, f"Content-Encoding: {content_encoding}")
+            if should_close:
+                resp_lines.append("Connection: close")
+            resp_headers = ("\r\n".join(resp_lines) + "\r\n\r\n").encode('utf-8')
+            return resp_headers, data, should_close
+        except FileNotFoundError:
+            resp = "HTTP/1.1 404 Not Found\r\n\r\n".encode('utf-8')
+            return resp, b"", should_close
 
-        elif path == "/user-agent":
-            user_agent = headers.get("user-agent", "Unknown")  # Safely get header
-            return (f"HTTP/1.1 200 OK\r\n"
-                    f"Content-Type: text/plain\r\n"
-                    f"Content-Length: {len(user_agent)}\r\n"
-                    f"\r\n"  # End of headers
-                    f"{user_agent}")
+    # Handle POST /files/...
+    if method == "POST" and path.startswith("/files/"):
+        filename = path[len("/files/"):]
+        with open(filename, "ab") as f:
+            f.write(parsed_request["body"] or b"")
+        resp = "HTTP/1.1 201 Created\r\n\r\n".encode('utf-8')
+        return resp, b"", should_close
 
-        elif path.startswith("/files/"):
-            # Example: /files/somefile.txt
-            file_path = pathlib.Path(os.curdir, path[len("/files/"):])
-            print(f"Path: {path}")
-            print(f"File path requested: {file_path}")
-
-            try:
-                with open(file_path, 'rb') as f:
-                    file_content = f.read()
-
-                    accept_encoding = headers.get("accept-encoding", "")
-                    if "gzip" in accept_encoding:
-                        # Handle gzip encoding if needed
-                        file_content = gzip.compress(file_content)
-                        content_encoding = "gzip"
-
-                        return (f"HTTP/1.1 200 OK\r\n"
-                                f"Content-Type: text/plain\r\n"
-                                f"Content-Encoding: {content_encoding}\r\n"
-                                f"Content-Length: {len(file_content)}\r\n"
-                                f"\r\n"  # End of headers
-                                f"{file_content}")
-
-                return (f"HTTP/1.1 200 OK\r\n"
-                        f"Content-Type: application/octet-stream\r\n"
-                        f"Content-Length: {len(file_content)}\r\n"
-                        f"\r\n"  # End of headers
-                        f"{file_content.decode('utf-8', errors='replace')}")
-            except FileNotFoundError:
-                return "HTTP/1.1 404 Not Found\r\n\r\n"
-
-        else:
-            # Path not found for GET method
-            return "HTTP/1.1 404 Not Found\r\n\r\n"
-
-    elif method == "POST":
-        if path.startswith("/files/"):
-            file_name = path[len("/files/"):]  # Get the part after /files/
-            content_bytes = parsed_request.get("body", "b")  # Assuming body is part of the request
-
-            with open(f"{file_name}", "a") as f:
-                f.write(content_bytes)
-
-            return "HTTP/1.1 201 Created\r\n\r\n"
-
-        return "HTTP/1.1 405 Method Not Allowed\r\n\r\n"  # For unsupported POST paths
-
-    else:
-        # Handle other methods if needed, otherwise return 404 or 405 Method Not Allowed
-        return "HTTP/1.1 404 Not Found\r\n\r\n"  # Or potentially 405
+    # Fallback for other methods or paths
+    resp = "HTTP/1.1 405 Method Not Allowed\r\n\r\n".encode('utf-8')
+    return resp, b"", should_close
 
 
 def handle_connection(conn, addr):
     """
-    Handles an individual client connection: receives, parses, routes, sends.
-
-    Args:
-        conn: The client socket object.
-        addr: The client address tuple.
+    Manages the client connection, sending responses and handling closure.
     """
     print(f"Connection from {addr}")
     try:
-        # 1. Receive Request
-        # Increased buffer size slightly, though 1024 is often enough for simple requests
-        request_bytes = conn.recv(2048)
-        if not request_bytes:
-            print(f"Connection from {addr} closed before sending data.")
-            return  # Exit if no data received
+        while True:
+            data = conn.recv(4096)
+            if not data:
+                break
+            parsed = parse_request(data)
 
-        # 2. Parse Request
-        parsed_request = parse_request(request_bytes)
-        # Optional: Print parsed details for debugging
-        # if parsed_request:
-        #     print(f"Parsed Request from {addr}: {parsed_request}")
-        # else:
-        #     print(f"Failed to parse request from {addr}")
+            # Route request and get close flag
+            resp_headers, body, should_close = route_request(parsed)
 
-        # 3. Route Request & Generate Response
-        response_str = route_request(parsed_request)
+            conn.sendall(resp_headers)
+            conn.sendall(body)
 
-        # 4. Send Response
-        conn.sendall(response_str.encode('utf-8'))  # Use sendall for reliability
-
+            # Close if requested
+            if should_close:
+                break
     except ConnectionResetError:
         print(f"Connection reset by peer: {addr}")
     except BrokenPipeError:
         print(f"Broken pipe error with client: {addr}")
     except Exception as e:
         print(f"Error handling connection from {addr}: {e}")
-        traceback.print_exc()  # Print full traceback for debugging
+        traceback.print_exc()
     finally:
-        # 5. Close Connection
-        try:
-            # Optional: Graceful shutdown (may not always be necessary/effective)
-            # conn.shutdown(socket.SHUT_WR)
-            conn.close()
-            print(f"Connection closed with {addr}")
-        except Exception as e:
-            # Handle potential errors during close if socket is already bad
-            print(f"Error closing connection with {addr}: {e}")
+        conn.close()
+        print(f"Connection closed with {addr}")
 
 
 def main():
     print("Logs from your program will appear here!")
 
-    url = "localhost"
-    port = 4221
-
-    server_socket = None  # Initialize to None
+    url, port = "localhost", 4221
+    server_socket = None
     try:
-        # Create the server socket
         server_socket = socket.create_server((url, port), reuse_port=True)
-        # Set socket options if needed (e.g., server_socket.setsockopt(...))
         print(f"Server listening on {url}:{port}")
-
-        # Main loop to accept connections
         while True:
-            # Wait for a new client connection
             client_socket, client_address = server_socket.accept()
-
-            # Create and start a new thread to handle this connection
-            # This allows the server to handle multiple clients concurrently
             client_thread = threading.Thread(
                 target=handle_connection,
                 args=(client_socket, client_address),
-                daemon=True  # Set as daemon so threads exit when main program exits
+                daemon=True
             )
             client_thread.start()
-
     except KeyboardInterrupt:
-        print("\nServer interrupted by user (Ctrl+C). Shutting down.")
+        print("\nServer interrupted by user. Shutting down.")
     except Exception as e:
-        print(f"An error occurred in the main server loop: {e}")
+        print(f"Server loop error: {e}")
         traceback.print_exc()
     finally:
-        # Cleanly close the main server socket
         if server_socket:
             print("Closing server socket.")
             server_socket.close()
@@ -264,12 +246,9 @@ def parse_arguments():
     parser.add_argument("--directory", help="Specify directory path", required=False)
     return parser.parse_args()
 
-
 if __name__ == "__main__":
     args = parse_arguments()
-    directory = args.directory
-    if directory:
-        print(f"Got directory: {directory}")
-        os.chdir(directory)
-
+    if args.directory:
+        print(f"Got directory: {args.directory}")
+        os.chdir(args.directory)
     main()
